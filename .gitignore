@@ -1,0 +1,17 @@
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+DerivedData/
+build/
+.swiftpm/
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# XcodeGen 產物（只有在用 project.yml 重新產生時才會出現）
+xcodegen/
+
+# macOS
+.DS_Store

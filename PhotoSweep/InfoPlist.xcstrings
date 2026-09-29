@@ -1,0 +1,29 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSPhotoLibraryUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PhotoSweep shows your photos so you can decide which ones to keep. Nothing is deleted until you empty the trash."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PhotoSweep 需要读取你的照片，让你决定要保留哪些。在你清空垃圾桶之前，不会删除任何照片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PhotoSweep 需要讀取你的照片，讓你決定要保留哪些。在你清空垃圾桶之前，不會刪除任何照片。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
