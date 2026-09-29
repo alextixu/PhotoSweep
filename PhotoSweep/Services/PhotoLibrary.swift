@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Photos
+import PhotosUI
 import UIKit
 
 /// 系統照片圖庫（PhotoKit）：授權、載入、依月份分組、圖庫變動時自動重新整理，
