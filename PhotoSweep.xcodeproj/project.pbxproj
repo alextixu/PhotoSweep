@@ -259,6 +259,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = PhotoSweep;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSweep shows your photos so you can decide which ones to keep. Nothing is deleted until you empty the trash.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -289,6 +290,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = PhotoSweep;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSweep shows your photos so you can decide which ones to keep. Nothing is deleted until you empty the trash.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

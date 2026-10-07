@@ -10,9 +10,19 @@ enum Thumbnails {
 
     static let manager = PHCachingImageManager()
 
+    /// 所有請求共用同一組選項：PHCachingImageManager 要求預載與實際請求的參數完全一致才會命中
+    static let options: PHImageRequestOptions = {
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .opportunistic   // 先給低解析度，再給完整版
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true   // iCloud 照片
+        return options
+    }()
+
+    /// 一張 2000px 卡片解碼後約 12–16 MB；128 MB 足夠換卡與復原用，又不會吃光舊機記憶體
     static let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = 256 * 1024 * 1024
+        cache.totalCostLimit = 128 * 1024 * 1024
         return cache
     }()
 
@@ -29,18 +39,19 @@ enum Thumbnails {
         cache.setObject(image, forKey: key(id, size), cost: Int(pixels * 4))
     }
 
-    static func requestOptions() -> PHImageRequestOptions {
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .opportunistic   // 先給低解析度，再給完整版
-        options.resizeMode = .fast
-        options.isNetworkAccessAllowed = true   // iCloud 照片
-        return options
+    /// 開始預先解碼這些卡片
+    static func prefetch(_ assets: [PHAsset]) {
+        guard !assets.isEmpty else { return }
+        manager.startCachingImages(
+            for: assets, targetSize: cardTargetSize, contentMode: .aspectFit, options: options
+        )
     }
 
-    /// 預先解碼接下來幾張卡片
-    static func prefetch(_ assets: [PHAsset]) {
-        manager.startCachingImages(
-            for: assets, targetSize: cardTargetSize, contentMode: .aspectFit, options: requestOptions()
+    /// 已經滑過的卡片不用再留著
+    static func stopPrefetch(_ assets: [PHAsset]) {
+        guard !assets.isEmpty else { return }
+        manager.stopCachingImages(
+            for: assets, targetSize: cardTargetSize, contentMode: .aspectFit, options: options
         )
     }
 
@@ -54,18 +65,28 @@ struct AssetImage: View {
     let asset: PHAsset
     /// 以像素為單位
     let targetSize: CGSize
-    var displayMode: ContentMode = .fill
-    var cache = true
+    let displayMode: ContentMode
+    let cache: Bool
+    /// 等待高解析度版本時先顯示的圖（例如全螢幕預覽沿用卡片已載好的 2000px 版本）
+    let placeholder: UIImage?
 
     @State private var image: UIImage?
 
-    init(asset: PHAsset, targetSize: CGSize, displayMode: ContentMode = .fill, cache: Bool = true) {
+    init(
+        asset: PHAsset,
+        targetSize: CGSize,
+        displayMode: ContentMode = .fill,
+        cache: Bool = true,
+        placeholder: UIImage? = nil
+    ) {
         self.asset = asset
         self.targetSize = targetSize
         self.displayMode = displayMode
         self.cache = cache
+        self.placeholder = placeholder
         // 建立時就從快取拿，切換卡片時不會閃一下空白
-        _image = State(initialValue: cache ? Thumbnails.cached(asset.localIdentifier, targetSize) : nil)
+        let seeded = cache ? Thumbnails.cached(asset.localIdentifier, targetSize) : nil
+        _image = State(initialValue: seeded ?? placeholder)
     }
 
     var body: some View {
@@ -93,13 +114,14 @@ struct AssetImage: View {
         let id = asset.localIdentifier
         let size = targetSize
         let shouldCache = cache
+        let hasPlaceholder = placeholder != nil
         let contentMode: PHImageContentMode = displayMode == .fill ? .aspectFill : .aspectFit
         let manager = Thumbnails.manager
 
         // opportunistic 模式下 handler 可能被叫兩次（先低畫質、後完整），用 AsyncStream 承接
         let stream = AsyncStream<(UIImage, Bool)> { continuation in
             let requestID = manager.requestImage(
-                for: asset, targetSize: size, contentMode: contentMode, options: Thumbnails.requestOptions()
+                for: asset, targetSize: size, contentMode: contentMode, options: Thumbnails.options
             ) { result, info in
                 let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
                 let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
@@ -116,6 +138,8 @@ struct AssetImage: View {
         }
 
         for await (result, degraded) in stream {
+            // 已經有清楚的預覽圖時，不要被更糊的低解析度版本蓋掉
+            if degraded, hasPlaceholder { continue }
             image = result
             if shouldCache, !degraded {
                 Thumbnails.store(result, id, size)

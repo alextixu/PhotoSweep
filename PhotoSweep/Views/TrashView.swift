@@ -8,7 +8,9 @@ struct TrashView: View {
     @Environment(\.displayScale) private var displayScale
 
     @State private var totalBytes: Int64?
-    @State private var isDeleting = false
+    /// 已經算好的檔案大小，按刪除時不用再算一次
+    @State private var knownSizes: [String: Int64] = [:]
+    @State private var isVisible = false
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var confirmRestoreAll = false
@@ -61,13 +63,21 @@ struct TrashView: View {
         }
         .confirmationDialog("Restore all photos?", isPresented: $confirmRestoreAll, titleVisibility: .visible) {
             Button("Restore All") {
-                store.restoreAll()
+                // 只還原畫面上列出的；「僅限所選照片」時看不到的那些紀錄保留
+                store.restore(ids: assets.map(\.localIdentifier))
             }
         } message: {
             Text("They go back to being unreviewed. Nothing is deleted.")
         }
-        .task(id: store.trash) {
+        // 以畫面上實際列出的照片為準：垃圾桶沒變、但圖庫載入完成或選取範圍改變時也要重算
+        .task(id: items.map(\.localIdentifier)) {
             await computeTotal()
+        }
+        .onAppear {
+            isVisible = true
+        }
+        .onDisappear {
+            isVisible = false
         }
         .alert("Couldn't delete", isPresented: $showError) {
             Button("OK") {}
@@ -96,7 +106,7 @@ struct TrashView: View {
             .buttonStyle(.borderedProminent)
             .tint(.red)
             .controlSize(.large)
-            .disabled(isDeleting)
+            .disabled(library.isEmptyingTrash)
             Text("iOS will ask you to confirm. Deleted photos stay in Recently Deleted for 30 days.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
@@ -108,11 +118,27 @@ struct TrashView: View {
 
     /// 真正刪除：交給 PhotoKit，iOS 會先跳系統確認框
     private func emptyTrash() async {
-        let toDelete = assets
+        // 只刪按下當下畫面上列出的這些
+        let requested = assets
+        guard !requested.isEmpty, !library.isEmptyingTrash else { return }
+        library.isEmptyingTrash = true
+        defer { library.isEmptyingTrash = false }
+
+        // 刪掉之後就讀不到檔案資訊，所以先把還沒算過的大小補齊
+        let missing = requested.filter { knownSizes[$0.localIdentifier] == nil }
+        if !missing.isEmpty {
+            let more = await SizeCache.shared.sizes(for: missing)
+            knownSizes.merge(more) { _, new in new }
+            // 等待期間垃圾桶畫面被關掉了：不要在別的畫面上跳出刪除確認
+            guard isVisible else { return }
+        }
+
+        // 等待期間使用者可能還原了幾張：只保留仍在垃圾桶裡的；之後才丟進來的不算。
+        // 從這裡到交給 PhotoKit 之間沒有任何等待，清單不會再變。
+        let requestedIDs = Set(requested.map(\.localIdentifier))
+        let toDelete = assets.filter { requestedIDs.contains($0.localIdentifier) }
         guard !toDelete.isEmpty else { return }
-        isDeleting = true
-        defer { isDeleting = false }
-        let bytes = totalBytes ?? 0
+        let bytes = toDelete.reduce(Int64(0)) { $0 + (knownSizes[$1.localIdentifier] ?? 0) }
         do {
             try await library.delete(toDelete)
             store.recordDeletion(of: toDelete.map(\.localIdentifier), bytes: bytes)
@@ -130,12 +156,11 @@ struct TrashView: View {
 
     private func computeTotal() async {
         totalBytes = nil
-        var total: Int64 = 0
-        for asset in assets {
-            if Task.isCancelled { return }
-            total += await SizeCache.shared.bytes(for: asset)
-        }
-        totalBytes = total
+        let sizes = await SizeCache.shared.sizes(for: assets)
+        // 就算中途被取消，算好的部分也留著給刪除時用
+        knownSizes.merge(sizes) { _, new in new }
+        if Task.isCancelled { return }
+        totalBytes = sizes.values.reduce(0, +)
     }
 }
 

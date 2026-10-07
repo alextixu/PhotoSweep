@@ -14,13 +14,20 @@ struct SwipeView: View {
     @State private var isReady = false
     @State private var index = 0
     @State private var drag: CGSize = .zero
-    @State private var isAnimatingOut = false
+    /// 手勢被系統中斷（來電、控制中心…）時 onEnded 不會被呼叫，用這個偵測並把卡片放回中央
+    @GestureState private var isDragging = false
+    /// 已經決定、正在飛出畫面的卡片；不擋手勢，可以馬上滑下一張
+    @State private var flying: [FlyingCard] = []
     @State private var history: [Decision] = []
     @State private var sessionKept = 0
     @State private var sessionTrashed = 0
     /// 剛切換過最愛的照片：PHAsset 物件是舊的，先用這個蓋過去
     @State private var favoriteOverrides: [String: Bool] = [:]
-    @State private var showDetail = false
+    @State private var isVisible = false
+    /// 目前請 PhotoKit 預先解碼的卡片
+    @State private var cachedWindow: [PHAsset] = []
+    /// 全螢幕預覽要顯示哪一張：記住被點的那張，而不是打開當下的「目前這張」
+    @State private var detail: DetailItem?
     @State private var showTrash = false
     @State private var showError = false
     @State private var errorMessage = ""
@@ -30,8 +37,41 @@ struct SwipeView: View {
         let trashed: Bool
     }
 
+    private struct DetailItem: Identifiable {
+        let asset: PHAsset
+        var id: String { asset.localIdentifier }
+    }
+
+    private struct FlyingCard {
+        let token = UUID()
+        let asset: PHAsset
+        var offset: CGSize
+    }
+
+    private enum Role {
+        case next
+        case top
+        case flying(CGSize)
+    }
+
+    /// 畫面上的每張卡片。用照片本身當身分，卡片從「下一張」變成「目前這張」再飛出去時，
+    /// 已載入的圖片與進行中的 iCloud 下載都會跟著走，不會重新載入。
+    private struct CardItem: Identifiable {
+        let asset: PHAsset
+        let role: Role
+        var id: String { asset.localIdentifier }
+    }
+
+    private struct CardLayout {
+        var offset: CGSize
+        var scale: CGFloat
+        var zIndex: Double
+        var isTop: Bool
+    }
+
     private var current: PHAsset? { index < queue.count ? queue[index] : nil }
     private var next: PHAsset? { index + 1 < queue.count ? queue[index + 1] : nil }
+    private var trashCount: Int { store.visibleTrashCount(in: library) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,16 +79,18 @@ struct SwipeView: View {
                 Spacer()
                 ProgressView()
                 Spacer()
-            } else if let current {
+            } else if current != nil || !flying.isEmpty {
                 progressHeader
-                cardStack(current: current)
-                controls(current: current)
+                cardStack
+                controls
             } else {
                 CompletionView(
                     wasEmpty: queue.isEmpty,
                     kept: sessionKept,
                     trashed: sessionTrashed,
-                    trashTotal: store.trash.count,
+                    trashTotal: trashCount,
+                    canUndo: !history.isEmpty,
+                    onUndo: { undo() },
                     onReviewTrash: { showTrash = true },
                     onReviewAgain: { reviewAgain() },
                     onDone: { dismiss() }
@@ -64,8 +106,8 @@ struct SwipeView: View {
                     showTrash = true
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: store.trash.isEmpty ? "trash" : "trash.fill")
-                        Text(store.trash.count.formatted())
+                        Image(systemName: trashCount == 0 ? "trash" : "trash.fill")
+                        Text(trashCount.formatted())
                             .monospacedDigit()
                     }
                 }
@@ -84,15 +126,32 @@ struct SwipeView: View {
             }
         }
         .task(id: group.id) {
-            prepare()
+            // 全螢幕預覽蓋上又關掉時，這個畫面會先消失再出現，task 會重跑；
+            // 只有第一次才整理佇列，之後只恢復預載，進度與復原紀錄都保留
+            if isReady {
+                if isVisible { prefetch() }
+            } else {
+                prepare()
+            }
+        }
+        .onAppear {
+            isVisible = true
         }
         .onDisappear {
+            isVisible = false
             Thumbnails.stopPrefetching()
+            cachedWindow = []
         }
-        .fullScreenCover(isPresented: $showDetail) {
-            if let current {
-                AssetDetailView(asset: current)
+        .onChange(of: isDragging) { _, active in
+            // 手勢被中斷：卡片放回中央
+            if !active, drag != .zero {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    drag = .zero
+                }
             }
+        }
+        .fullScreenCover(item: $detail) { item in
+            AssetDetailView(asset: item.asset)
         }
         .sheet(isPresented: $showTrash) {
             TrashSheet()
@@ -109,7 +168,7 @@ struct SwipeView: View {
     private var progressHeader: some View {
         VStack(spacing: 6) {
             HStack {
-                Text("\(index + 1) of \(queue.count)")
+                Text("\(min(index + 1, queue.count)) of \(queue.count)")
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
                 Spacer()
@@ -117,44 +176,70 @@ struct SwipeView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            ProgressView(value: Double(index), total: Double(max(queue.count, 1)))
+            ProgressView(value: Double(min(index, queue.count)), total: Double(max(queue.count, 1)))
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
 
-    private func cardStack(current: PHAsset) -> some View {
+    /// 由下往上：下一張、目前這張、正在飛出去的
+    private var cardItems: [CardItem] {
+        var items: [CardItem] = []
+        if let next { items.append(CardItem(asset: next, role: .next)) }
+        if let current { items.append(CardItem(asset: current, role: .top)) }
+        for card in flying {
+            items.append(CardItem(asset: card.asset, role: .flying(card.offset)))
+        }
+        return items
+    }
+
+    private func layout(for role: Role, progress: CGFloat) -> CardLayout {
+        switch role {
+        case .next:
+            // 拖到 120pt 時後面那張已長到全尺寸，換卡時不會跳
+            return CardLayout(
+                offset: CGSize(width: 0, height: 12 * (1 - progress)),
+                scale: 0.94 + 0.06 * progress,
+                zIndex: 0,
+                isTop: false
+            )
+        case .top:
+            return CardLayout(offset: drag, scale: 1, zIndex: 1, isTop: true)
+        case .flying(let offset):
+            return CardLayout(offset: offset, scale: 1, zIndex: 2, isTop: false)
+        }
+    }
+
+    private var cardStack: some View {
         GeometryReader { geo in
             let size = CGSize(width: geo.size.width - 32, height: geo.size.height - 24)
-            // 拖到 120pt 時後面那張已長到全尺寸，換卡時不會跳
             let progress = min(1, abs(drag.width) / 120)
             ZStack {
-                if let next {
-                    PhotoCard(asset: next, size: size, isFavorite: isFavorite(next))
-                        .scaleEffect(0.94 + 0.06 * progress)
-                        .offset(y: 12 * (1 - progress))
-                        .id(next.localIdentifier)
+                ForEach(cardItems) { item in
+                    let cardLayout = layout(for: item.role, progress: progress)
+                    PhotoCard(asset: item.asset, size: size, isFavorite: isFavorite(item.asset))
+                        .overlay(alignment: .topLeading) {
+                            stamp("KEEP", color: .green, opacity: cardLayout.offset.width / 100)
+                                .rotationEffect(.degrees(-15))
+                                .padding(24)
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            stamp("TRASH", color: .red, opacity: -cardLayout.offset.width / 100)
+                                .rotationEffect(.degrees(15))
+                                .padding(24)
+                        }
+                        .scaleEffect(cardLayout.scale)
+                        .offset(cardLayout.offset)
+                        .rotationEffect(.degrees(Double(cardLayout.offset.width / 18)), anchor: .bottom)
+                        .gesture(
+                            TapGesture(count: 2)
+                                .onEnded { toggleFavorite(item.asset) }
+                                .exclusively(before: TapGesture().onEnded { openDetail(item.asset) })
+                        )
+                        .gesture(dragGesture(for: item.asset))
+                        .allowsHitTesting(cardLayout.isTop)
+                        .zIndex(cardLayout.zIndex)
                 }
-                PhotoCard(asset: current, size: size, isFavorite: isFavorite(current))
-                    .overlay(alignment: .topLeading) {
-                        stamp("KEEP", color: .green, opacity: drag.width / 100)
-                            .rotationEffect(.degrees(-15))
-                            .padding(24)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        stamp("TRASH", color: .red, opacity: -drag.width / 100)
-                            .rotationEffect(.degrees(15))
-                            .padding(24)
-                    }
-                    .offset(drag)
-                    .rotationEffect(.degrees(Double(drag.width / 18)), anchor: .bottom)
-                    .gesture(
-                        TapGesture(count: 2)
-                            .onEnded { toggleFavorite(current) }
-                            .exclusively(before: TapGesture().onEnded { showDetail = true })
-                    )
-                    .gesture(dragGesture)
-                    .id(current.localIdentifier)
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
@@ -171,26 +256,33 @@ struct SwipeView: View {
             .opacity(Double(max(0, min(1, opacity))))
     }
 
-    private func controls(current: PHAsset) -> some View {
-        HStack(spacing: 24) {
+    private var controls: some View {
+        let hasCard = current != nil
+        let favorite = current.map { isFavorite($0) } ?? false
+        return HStack(spacing: 24) {
             CircleButton(systemImage: "arrow.uturn.backward", color: .secondary, size: 52, label: "Undo") {
                 undo()
             }
-            .disabled(history.isEmpty || isAnimatingOut)
+            .disabled(history.isEmpty)
             .opacity(history.isEmpty ? 0.4 : 1)
 
             CircleButton(systemImage: "trash.fill", color: .red, size: 68, label: "Trash") {
                 commit(trashed: true)
             }
+            .disabled(!hasCard)
+
             CircleButton(systemImage: "checkmark", color: .green, size: 68, label: "Keep") {
                 commit(trashed: false)
             }
+            .disabled(!hasCard)
+
             CircleButton(
-                systemImage: isFavorite(current) ? "heart.fill" : "heart",
+                systemImage: favorite ? "heart.fill" : "heart",
                 color: .pink, size: 52, label: "Favorite"
             ) {
-                toggleFavorite(current)
+                if let current { toggleFavorite(current) }
             }
+            .disabled(!hasCard)
         }
         .padding(.top, 8)
         .padding(.bottom, 20)
@@ -198,14 +290,35 @@ struct SwipeView: View {
 
     // MARK: - 手勢與動作
 
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+    private func isTop(_ asset: PHAsset) -> Bool {
+        asset.localIdentifier == current?.localIdentifier
+    }
+
+    /// 單擊要等雙擊判定逾時（約 0.3 秒）才觸發；這段時間內若已經滑走，就不要打開別張
+    private func openDetail(_ asset: PHAsset) {
+        guard isTop(asset) else { return }
+        detail = DetailItem(asset: asset)
+    }
+
+    /// 每張卡片有自己的拖曳手勢：拖到一半這張不再是最上面（例如另一隻手指按了復原），
+    /// 就不去移動或送出別張卡片
+    private func dragGesture(for asset: PHAsset) -> some Gesture {
+        // 用全域座標：卡片本身會跟著手指移動旋轉，用自身座標會讓位移量抖動
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .updating($isDragging) { _, state, _ in
+                state = true
+            }
             .onChanged { value in
-                guard !isAnimatingOut else { return }
+                guard isTop(asset) else { return }
                 drag = value.translation
             }
             .onEnded { value in
-                guard !isAnimatingOut else { return }
+                guard isTop(asset) else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        drag = .zero
+                    }
+                    return
+                }
                 let width = value.translation.width
                 let predicted = value.predictedEndTranslation.width
                 if width > 100 || predicted > 260 {
@@ -221,44 +334,56 @@ struct SwipeView: View {
     }
 
     private func prepare() {
-        queue = group.assets.filter { !store.isReviewed($0.localIdentifier) }
+        // 透過目前的圖庫重新取得 PHAsset：已刪除的照片會被排除，最愛等屬性也是最新的
+        queue = group.ids.compactMap { id in
+            store.isReviewed(id) ? nil : library.assetsByID[id]
+        }
         index = 0
+        drag = .zero
+        flying = []
         history = []
         sessionKept = 0
         sessionTrashed = 0
         isReady = true
+        Thumbnails.stopPrefetching()
+        cachedWindow = []
         prefetch()
     }
 
     /// 清掉這組的「保留」標記後重來（垃圾桶內的不動）
     private func reviewAgain() {
-        store.resetKept(for: group.assets.map(\.localIdentifier))
+        store.resetKept(for: group.ids)
         prepare()
     }
 
     private func commit(trashed: Bool) {
-        guard !isAnimatingOut, let asset = current else { return }
-        isAnimatingOut = true
+        guard let asset = current else { return }
         Haptics.impact(trashed ? .rigid : .light)
+        apply(trashed: trashed, to: asset)
 
+        // 這張交給 flying 繼續飛出去；因為卡片身分跟著照片走，它會從手指放開的位置接著飛。
+        // 下一張同時升上來，馬上就能滑。
         let direction: CGFloat = trashed ? -1 : 1
+        let card = FlyingCard(
+            asset: asset,
+            offset: CGSize(width: direction * 1000, height: drag.height * 1.6)
+        )
         withAnimation(.easeOut(duration: 0.28)) {
-            drag = CGSize(width: direction * 1000, height: drag.height * 1.6)
+            flying.append(card)
+            index += 1
+            drag = .zero
         }
 
+        let token = card.token
         Task {
-            try? await Task.sleep(for: .milliseconds(260))
-            apply(trashed: trashed, to: asset)
-            // 換下一張時不要有動畫：舊卡已飛出畫面，新卡直接出現在中央
+            try? await Task.sleep(for: .milliseconds(320))
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                index += 1
-                drag = .zero
+                flying.removeAll { $0.token == token }
             }
-            isAnimatingOut = false
-            prefetch()
         }
+        if isVisible { prefetch() }
     }
 
     private func apply(trashed: Bool, to asset: PHAsset) {
@@ -275,13 +400,25 @@ struct SwipeView: View {
     }
 
     private func undo() {
-        guard !isAnimatingOut, let last = history.popLast() else { return }
-        store.clearDecision(last.asset.localIdentifier)
+        guard let last = history.last else { return }
+        let id = last.asset.localIdentifier
+        // 這張已經從垃圾桶真正刪除了：無法復原，也不能跳過它（佇列位置會對不上），
+        // 所以清空復原紀錄
+        guard library.assetIDs.contains(id) else {
+            history.removeAll()
+            return
+        }
+        history.removeLast()
+        store.clearDecision(id)
         if last.trashed { sessionTrashed -= 1 } else { sessionKept -= 1 }
         Haptics.impact(.light)
+        // 還在飛的話，同一張卡片會從目前位置彈回中央
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            flying.removeAll { $0.asset.localIdentifier == id }
             index = max(0, index - 1)
+            drag = .zero
         }
+        if isVisible { prefetch() }
     }
 
     private func isFavorite(_ asset: PHAsset) -> Bool {
@@ -303,10 +440,14 @@ struct SwipeView: View {
         }
     }
 
+    /// 只預載目前這張起的 6 張；滑過的就請 PhotoKit 放掉，長時間滑也不會越吃越多記憶體
     private func prefetch() {
-        guard index + 1 < queue.count else { return }
-        let upcoming = Array(queue[(index + 1)..<min(index + 6, queue.count)])
-        Thumbnails.prefetch(upcoming)
+        let upcoming = index < queue.count ? Array(queue[index..<min(index + 6, queue.count)]) : []
+        let keepIDs = Set(upcoming.map(\.localIdentifier))
+        let cachedIDs = Set(cachedWindow.map(\.localIdentifier))
+        Thumbnails.stopPrefetch(cachedWindow.filter { !keepIDs.contains($0.localIdentifier) })
+        Thumbnails.prefetch(upcoming.filter { !cachedIDs.contains($0.localIdentifier) })
+        cachedWindow = upcoming
     }
 }
 
@@ -340,6 +481,8 @@ private struct CompletionView: View {
     let kept: Int
     let trashed: Int
     let trashTotal: Int
+    let canUndo: Bool
+    let onUndo: () -> Void
     let onReviewTrash: () -> Void
     let onReviewAgain: () -> Void
     let onDone: () -> Void
@@ -363,6 +506,15 @@ private struct CompletionView: View {
                     .font(.title.bold())
                 Text("Kept \(kept) · Trashed \(trashed)")
                     .foregroundStyle(.secondary)
+            }
+            if canUndo {
+                // 最後一張滑錯也能救回來
+                Button {
+                    onUndo()
+                } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                }
+                .controlSize(.large)
             }
             Spacer()
             if trashTotal > 0 {

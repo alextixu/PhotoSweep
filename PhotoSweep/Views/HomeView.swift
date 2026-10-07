@@ -8,6 +8,9 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @State private var showSettings = false
 
+    /// 「僅限所選照片」模式下只算看得到的
+    private var trashCount: Int { store.visibleTrashCount(in: library) }
+
     var body: some View {
         NavigationStack(path: $path) {
             List {
@@ -41,13 +44,13 @@ struct HomeView: View {
                     Button {
                         path.append(Route.trash)
                     } label: {
-                        Image(systemName: store.trash.isEmpty ? "trash" : "trash.fill")
+                        Image(systemName: trashCount == 0 ? "trash" : "trash.fill")
                     }
                     .accessibilityLabel("Trash")
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                if !store.trash.isEmpty {
+                if trashCount > 0 {
                     trashBar
                 }
             }
@@ -91,9 +94,9 @@ struct HomeView: View {
     private var statsSection: some View {
         Section {
             HStack(spacing: 0) {
-                StatTile(value: store.reviewedCount.formatted(), label: "Reviewed", color: .blue)
+                StatTile(value: store.visibleReviewedCount(in: library).formatted(), label: "Reviewed", color: .blue)
                 Divider()
-                StatTile(value: store.trash.count.formatted(), label: "In Trash", color: .red)
+                StatTile(value: trashCount.formatted(), label: "In Trash", color: .red)
                 Divider()
                 StatTile(value: ByteFormat.string(store.freedBytes), label: "Freed", color: .green)
             }
@@ -137,7 +140,7 @@ struct HomeView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "trash.fill")
-                Text("\(store.trash.count) in trash")
+                Text("\(trashCount) in trash")
                     .fontWeight(.semibold)
                 Spacer()
                 Text("Review")
@@ -224,7 +227,8 @@ private struct MonthRow: View {
     let group: AssetGroup
 
     var body: some View {
-        let reviewed = group.assets.reduce(0) { $0 + (store.isReviewed($1.localIdentifier) ? 1 : 0) }
+        // 用預先取好的 ID 計算，每次滑動時留在底下的月份列重算也很便宜
+        let reviewed = group.ids.reduce(0) { $0 + (store.isReviewed($1) ? 1 : 0) }
         let isDone = reviewed >= group.count
         HStack(spacing: 12) {
             if let cover = group.cover {

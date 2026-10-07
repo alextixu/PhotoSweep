@@ -14,7 +14,7 @@ struct SettingsView: View {
             List {
                 Section("Statistics") {
                     LabeledContent("Photos in library", value: library.allAssets.count.formatted())
-                    LabeledContent("Reviewed", value: store.reviewedCount.formatted())
+                    LabeledContent("Reviewed", value: store.visibleReviewedCount(in: library).formatted())
                     LabeledContent("Deleted", value: store.deletedCount.formatted())
                     LabeledContent("Space freed", value: ByteFormat.string(store.freedBytes))
                 }
@@ -54,7 +54,7 @@ struct SettingsView: View {
                     store.resetKept(for: Array(store.kept))
                 }
             } message: {
-                Text("All photos will be marked as unreviewed. The trash is kept.")
+                Text("Kept photos will be marked as unreviewed. The trash is kept.")
             }
             .confirmationDialog("Erase all app data?", isPresented: $confirmResetAll, titleVisibility: .visible) {
                 Button("Erase Everything", role: .destructive) {

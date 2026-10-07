@@ -46,6 +46,15 @@ struct AssetGroup: Identifiable, Hashable {
     let id: String
     let kind: Kind
     let assets: [PHAsset]
+    /// 預先取好的 localIdentifier，統計進度時不用每次向 PHAsset 要
+    let ids: [String]
+
+    init(id: String, kind: Kind, assets: [PHAsset]) {
+        self.id = id
+        self.kind = kind
+        self.assets = assets
+        self.ids = assets.map(\.localIdentifier)
+    }
 
     var count: Int { assets.count }
     var cover: PHAsset? { assets.first }
@@ -56,8 +65,15 @@ struct AssetGroup: Identifiable, Hashable {
         return -1
     }
 
-    // 只用 id 判斷相等／雜湊，避免對上千個 PHAsset 做比較
-    static func == (lhs: AssetGroup, rhs: AssetGroup) -> Bool { lhs.id == rhs.id }
+    // 相等要比到內容：圖庫重新載入後會產生新的 PHAsset 物件，
+    // SwiftUI 才會知道月份列的內容變了。比對物件位址即可，不用逐一比屬性。
+    static func == (lhs: AssetGroup, rhs: AssetGroup) -> Bool {
+        lhs.id == rhs.id
+            && lhs.assets.count == rhs.assets.count
+            && lhs.assets.elementsEqual(rhs.assets, by: ===)
+    }
+
+    // 雜湊只用 id，與上面的 == 一致（相等的兩個群組 id 必定相同）
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 

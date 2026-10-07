@@ -29,6 +29,7 @@ targets:
         CFBundleDisplayName: PhotoSweep
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, zh-Hant, zh-Hans]
+        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         NSPhotoLibraryUsageDescription: PhotoSweep shows your photos so you can decide which ones to keep. Nothing is deleted until you empty the trash.
         UILaunchScreen: {}
         UIApplicationSceneManifest:

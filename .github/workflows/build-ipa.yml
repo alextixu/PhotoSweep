@@ -2,10 +2,10 @@
 # 下載後用 Sideloadly（Windows）以自己的 Apple ID 簽名並安裝到 iPhone。
 name: Build unsigned IPA
 
+# 只在手動觸發時建置（Actions 分頁按「Run workflow」，或 gh workflow run build-ipa.yml）。
+# private repo 的 macOS 分鐘數以 10 倍計算，只改 README 之類的推送不必每次都編。
 on:
-  workflow_dispatch:      # Actions 分頁手動按「Run workflow」
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:

@@ -17,6 +17,17 @@ actor SizeCache {
         return total
     }
 
+    /// 一次取得整批的大小（只切換一次 actor）；呼叫的工作被取消時提早結束，回傳已算好的部分
+    func sizes(for assets: [PHAsset]) -> [String: Int64] {
+        var result: [String: Int64] = [:]
+        result.reserveCapacity(assets.count)
+        for asset in assets {
+            if Task.isCancelled { break }
+            result[asset.localIdentifier] = bytes(for: asset)
+        }
+        return result
+    }
+
     private static func compute(_ asset: PHAsset) -> Int64 {
         var total: Int64 = 0
         for resource in PHAssetResource.assetResources(for: asset) {

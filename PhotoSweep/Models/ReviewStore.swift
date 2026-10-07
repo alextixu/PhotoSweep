@@ -45,7 +45,8 @@ final class ReviewStore {
 
     // MARK: - 查詢
 
-    var reviewedCount: Int { kept.count + trash.count + deletedCount }
+    /// 已檢視、而且還在圖庫裡的照片（已刪除的另外算在 deletedCount）
+    var reviewedCount: Int { kept.count + trash.count }
 
     func isReviewed(_ id: String) -> Bool { kept.contains(id) || trashSet.contains(id) }
     func isTrashed(_ id: String) -> Bool { trashSet.contains(id) }
@@ -73,18 +74,21 @@ final class ReviewStore {
 
     func restore(_ id: String) { clearDecision(id) }
 
-    func restoreAll() {
-        trash.removeAll()
-        trashSet.removeAll()
+    /// 一次還原多張（垃圾桶的「全部還原」只還原畫面上看得到的那些）
+    func restore(ids: [String]) {
+        let restored = Set(ids)
+        trash.removeAll { restored.contains($0) }
+        trashSet.subtract(restored)
         scheduleSave()
     }
 
     /// 清空垃圾桶成功後呼叫
     func recordDeletion(of ids: [String], bytes: Int64) {
-        for id in ids {
-            removeFromTrash(id)
-            kept.remove(id)
-        }
+        // 一次處理整批，上萬張也不會逐張掃陣列
+        let removed = Set(ids)
+        trash.removeAll { removed.contains($0) }
+        trashSet.subtract(removed)
+        kept.subtract(removed)
         deletedCount += ids.count
         freedBytes += bytes
         scheduleSave()
@@ -92,7 +96,7 @@ final class ReviewStore {
 
     /// 重新檢視：清掉這批照片的「保留」標記（垃圾桶內的不動）
     func resetKept(for ids: [String]) {
-        for id in ids { kept.remove(id) }
+        kept.subtract(ids)
         scheduleSave()
     }
 
@@ -106,13 +110,18 @@ final class ReviewStore {
     }
 
     /// 圖庫重新載入後，移除已經不在圖庫裡的紀錄
+    /// 只有真的有東西要移除時才改動，避免每次重新載入都讓畫面重畫
     func prune(keeping existing: Set<String>) {
-        let keptBefore = kept.count
-        let trashBefore = trash.count
-        kept.formIntersection(existing)
-        trash.removeAll { !existing.contains($0) }
-        trashSet = Set(trash)
-        if kept.count != keptBefore || trash.count != trashBefore { scheduleSave() }
+        let newKept = kept.intersection(existing)
+        let keptChanged = newKept.count != kept.count
+        if keptChanged { kept = newKept }
+
+        let trashChanged = trash.contains { !existing.contains($0) }
+        if trashChanged {
+            trash.removeAll { !existing.contains($0) }
+            trashSet = Set(trash)
+        }
+        if keptChanged || trashChanged { scheduleSave() }
     }
 
     private func removeFromTrash(_ id: String) {
@@ -153,5 +162,26 @@ final class ReviewStore {
         } catch {
             print("ReviewStore: save failed – \(error)")
         }
+    }
+}
+
+extension ReviewStore {
+    /// 畫面上要顯示的垃圾桶數量：只算圖庫裡看得到的，和垃圾桶畫面列出的一致。
+    /// 「僅限所選照片」模式下沒被選取的照片、或已在別處刪掉的照片，紀錄會保留但不算進來，
+    /// 避免「垃圾桶有 N 個」點進去卻是空的。
+    func visibleTrashCount(in library: PhotoLibrary) -> Int {
+        guard library.hasLoaded else { return trash.count }
+        // 先取出來再逐一比對，不要每張都經過可觀察屬性的存取
+        let ids = library.assetIDs
+        return trash.reduce(0) { $0 + (ids.contains($1) ? 1 : 0) }
+    }
+
+    /// 畫面上要顯示的「已檢視」數量。完整取用時紀錄會隨圖庫同步清理，直接用總數；
+    /// 「僅限所選照片」時只算看得到的（看得到的照片通常不多，逐一檢查很便宜）。
+    func visibleReviewedCount(in library: PhotoLibrary) -> Int {
+        guard library.hasLoaded, library.authorization == .limited else { return reviewedCount }
+        let kept = self.kept
+        let trashed = trashSet
+        return library.assetIDs.reduce(0) { $0 + (kept.contains($1) || trashed.contains($1) ? 1 : 0) }
     }
 }

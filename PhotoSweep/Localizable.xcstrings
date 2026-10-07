@@ -191,23 +191,6 @@
         }
       }
     },
-    "All photos will be marked as unreviewed. The trash is kept." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "所有照片会标记为未查看，垃圾桶内容保留。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "所有照片會標記為未檢視，垃圾桶內容保留。"
-          }
-        }
-      }
-    },
     "Already reviewed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -647,6 +630,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保留 %lld · 丟棄 %lld"
+          }
+        }
+      }
+    },
+    "Kept photos will be marked as unreviewed. The trash is kept." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保留的照片会标记为未查看，垃圾桶内容保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保留的照片會標記為未檢視，垃圾桶內容保留。"
           }
         }
       }
