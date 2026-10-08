@@ -178,6 +178,8 @@ struct SwipeView: View {
             }
             ProgressView(value: Double(min(index, queue.count)), total: Double(max(queue.count, 1)))
         }
+        // iPad 上跟卡片同寬，不要拉滿整個螢幕
+        .frame(maxWidth: Layout.maxCardWidth)
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
@@ -212,7 +214,8 @@ struct SwipeView: View {
 
     private var cardStack: some View {
         GeometryReader { geo in
-            let size = CGSize(width: geo.size.width - 32, height: geo.size.height - 24)
+            // iPhone 填滿可用空間；iPad 限制寬度並維持直式比例，卡片置中
+            let size = Layout.cardSize(in: geo.size)
             let progress = min(1, abs(drag.width) / 120)
             ZStack {
                 ForEach(cardItems) { item in
@@ -366,7 +369,7 @@ struct SwipeView: View {
         let direction: CGFloat = trashed ? -1 : 1
         let card = FlyingCard(
             asset: asset,
-            offset: CGSize(width: direction * 1000, height: drag.height * 1.6)
+            offset: CGSize(width: direction * Layout.flyOutDistance, height: drag.height * 1.6)
         )
         withAnimation(.easeOut(duration: 0.28)) {
             flying.append(card)
@@ -540,6 +543,8 @@ private struct CompletionView: View {
             }
             .controlSize(.large)
         }
+        // iPad 上按鈕不要拉滿整個螢幕
+        .frame(maxWidth: Layout.narrowWidth)
         .padding(24)
     }
 }

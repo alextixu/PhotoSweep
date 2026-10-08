@@ -293,7 +293,7 @@ enum LibraryLoader {
         return assets
     }
 
-    /// 依拍攝月份分組；輸入已是由新到舊，群組內反轉成由舊到新，檢視時照時間順序走
+    /// 依拍攝月份分組；輸入已是由新到舊，群組內也維持由新到舊：每次都從最新的照片開始滑
     static func monthGroups(from assets: [PHAsset]) -> [AssetGroup] {
         let calendar = Calendar.current
         var buckets: [YearMonth: [PHAsset]] = [:]
@@ -313,7 +313,7 @@ enum LibraryLoader {
             AssetGroup(
                 id: "month-\(key.year)-\(key.month)",
                 kind: .month(year: key.year, month: key.month),
-                assets: Array(value.reversed())
+                assets: value
             )
         }
         groups.sort { $0.sortKey > $1.sortKey }

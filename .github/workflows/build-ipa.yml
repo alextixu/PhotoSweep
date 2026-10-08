@@ -9,12 +9,15 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15     # 內建 Xcode 16
+    # Apple 自 2026-04-28 起要求以 Xcode 26 / iOS 26 SDK 建置；側載版也用同一套，行為才會一致
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Show Xcode and SDK versions
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
 
       - name: Build (no code signing)
         run: |

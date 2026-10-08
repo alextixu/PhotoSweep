@@ -1416,19 +1416,19 @@
         }
       }
     },
-    "Your photos never leave your iPhone." : {
+    "Your photos never leave your device." : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你的照片不会离开你的 iPhone。"
+            "value" : "你的照片不会离开你的设备。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "你的照片不會離開你的 iPhone。"
+            "value" : "你的照片不會離開你的裝置。"
           }
         }
       }

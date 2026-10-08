@@ -7,5 +7,8 @@
 	<!-- 「僅限所選照片」時，不要讓 iOS 每次啟動都跳出「選取更多照片」詢問；App 內有自己的按鈕 -->
 	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
 	<true/>
+	<!-- 沒有使用需要申報的加密：上傳 App Store Connect 時不必每次回答出口合規問題 -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

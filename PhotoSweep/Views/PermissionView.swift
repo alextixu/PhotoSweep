@@ -84,11 +84,14 @@ struct PermissionView: View {
                 .disabled(isRequesting)
             }
 
-            Text("Your photos never leave your iPhone.")
+            Text("Your photos never leave your device.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
+        // iPad 上內容集中在中間，不要拉滿整個螢幕
+        .frame(maxWidth: Layout.narrowWidth)
         .padding(24)
+        .frame(maxWidth: .infinity)
     }
 }
 

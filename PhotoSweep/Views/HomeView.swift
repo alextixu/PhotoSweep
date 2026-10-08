@@ -22,6 +22,7 @@ struct HomeView: View {
                 monthsSection
             }
             .listStyle(.insetGrouped)
+            .readableContentWidth()
             .navigationTitle("PhotoSweep")
             .navigationDestination(for: Route.self) { route in
                 switch route {
@@ -157,6 +158,7 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.red)
+        .frame(maxWidth: Layout.readableWidth)
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }

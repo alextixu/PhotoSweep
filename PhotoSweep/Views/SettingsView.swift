@@ -35,7 +35,7 @@ struct SettingsView: View {
                     Text("Photos you swipe left on go to the trash inside this app. They are only deleted when you empty the trash, and iOS keeps them in Recently Deleted for another 30 days.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Text("Your photos never leave your iPhone.")
+                    Text("Your photos never leave your device.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

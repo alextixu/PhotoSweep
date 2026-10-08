@@ -21,12 +21,14 @@
 - **Swipe to decide** — right to keep, left to trash, or use the buttons under the card. Undo works even on the last photo.
 - **Double-tap to favorite** — synced with the Favorites album in Apple Photos.
 - **Tap to inspect** — full-screen view with pinch-zoom and pull-down-to-close; videos play inline.
+- **Newest first** — every deck starts with your most recent photos.
 - **Browse by month** — every month is a deck with its own progress bar, remembered between launches.
 - **Quick modes** — Random, Screenshots, Videos, Favorites, All Photos.
 - **Trash with a safety net** — restore one or all, see the total size, empty it in one tap. iOS asks you to confirm and keeps deleted photos in *Recently Deleted* for 30 days.
 - **Stats** — photos reviewed, items in trash, space freed.
 - **Limited access and iCloud** — works with "Selected Photos Only"; iCloud originals load on demand.
 - **100% on-device** — no network, no account, no analytics.
+- **iPhone and iPad** — on iPad the cards keep a photo-like proportion and lists stay at a comfortable reading width, in any orientation or Split View.
 - **Three languages** — Traditional Chinese, Simplified Chinese, English, following the system language.
 
 ## How to use
@@ -39,7 +41,7 @@
 | **3. Swipe** | **4. Empty the trash** |
 
 1. **Allow photo access.** Tap *Get Started* and choose *Allow Full Access*. With *Limited Access* you only see the photos you picked; tap *Select More* on the home screen to add more.
-2. **Pick what to review.** The home screen shows your progress at the top. Under *Quick Start*, pick Random, Screenshots, Videos, Favorites or All Photos. Under *By Month*, pick a month; a green check means it's done.
+2. **Pick what to review.** Every deck starts with your newest photos. The home screen shows your progress at the top. Under *Quick Start*, pick Random, Screenshots, Videos, Favorites or All Photos. Under *By Month*, pick a month; a green check means it's done.
 3. **Swipe.**
    - Swipe **right**, or tap ✓, to **keep** a photo. Nothing changes in your library.
    - Swipe **left**, or tap 🗑, to put it in the app's **trash**. It is not deleted yet.
@@ -57,7 +59,7 @@ Finished a month? The completion screen offers *Review Trash*, *Review Again* (s
 </p>
 
 1. **允許取用照片**：按「開始」，在系統詢問時選「允許完整取用」。如果選「限制取用」，App 只看得到你選的照片；之後可在主畫面按「選取更多」加入。
-2. **選擇要整理的照片**：主畫面上方是統計。「快速開始」可以選隨機、螢幕截圖、影片、最愛、所有照片；「依月份」可以挑某個月，整理完會出現綠色勾勾。
+2. **選擇要整理的照片**：每一組都從最新的照片開始。主畫面上方是統計。「快速開始」可以選隨機、螢幕截圖、影片、最愛、所有照片；「依月份」可以挑某個月，整理完會出現綠色勾勾。
 3. **開始滑**：
    - **往右滑**或按 ✓：**保留**，照片原封不動。
    - **往左滑**或按 🗑：放進 App 的**垃圾桶**，這時還沒有真的刪除。
@@ -106,7 +108,7 @@ Apps signed with a free Apple ID expire after 7 days. Install the same `.ipa` ag
 
 ## Build with Xcode · 用 Xcode 建置
 
-Requires Xcode 16 or later; the app runs on iOS 17.0+. Test on a real iPhone, since the Simulator has only a few sample photos.
+Requires Xcode 26 or later (the App Store requires the iOS 26 SDK); the app runs on iOS / iPadOS 17.0+. Test on a real device, since the Simulator has only a few sample photos.
 
 1. Open `PhotoSweep.xcodeproj` in Xcode.
 2. *Signing & Capabilities* → choose your Team. The bundle ID is `com.lintaixu.PhotoSweep`; change it if you like.
@@ -117,6 +119,15 @@ If the project file won't open in your Xcode version, regenerate it with [XcodeG
 ```bash
 brew install xcodegen && xcodegen generate
 ```
+
+## Publish to the App Store · 上架
+
+1. Join the Apple Developer Program, then create the app in App Store Connect with bundle ID `com.lintaixu.PhotoSweep`.
+2. Create an App Store Connect API key with the Admin role, and add four repository secrets: `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64`.
+3. Run the *Release to App Store Connect* workflow in the Actions tab. It archives with Xcode 26, signs with the API key and uploads the build. The build appears in TestFlight first.
+4. Fill in the store page from [docs/appstore/listing.md](docs/appstore/listing.md), publish [docs/appstore/privacy-policy.md](docs/appstore/privacy-policy.md) at a public URL, add device screenshots, and submit for review.
+
+加入 Apple Developer Program 後，在 App Store Connect 建立 App，並把 API 金鑰設成 repo 的 4 個 secret；到 Actions 執行「Release to App Store Connect」就會自動簽名並上傳，版本會先出現在 TestFlight。商店文字、隱私權政策與截圖規格都在 `docs/appstore/`。
 
 ## Project structure · 專案結構
 
@@ -139,19 +150,21 @@ PhotoSweep/
 │   ├── PhotoCard.swift          單張卡片（標籤、日期、大小）
 │   ├── AssetDetailView.swift    全螢幕預覽／影片播放
 │   ├── TrashView.swift          垃圾桶格狀、還原、清空
-│   └── SettingsView.swift       統計、重設、關於
+│   ├── SettingsView.swift       統計、重設、關於
+│   └── Layout.swift             iPad 等寬螢幕的版面比例
 ├── Localizable.xcstrings        三語字串目錄
 ├── InfoPlist.xcstrings          照片權限說明文字
+├── PrivacyInfo.xcprivacy        隱私清單：不追蹤、不收集資料
 └── Assets.xcassets              App 圖示、強調色
 Config/Info.plist                無法用建置設定產生的 Info.plist 項目
-docs/                            README 用的圖片
+docs/                            README 用的圖片；appstore/ 是上架文字與隱私權政策
 ```
 
 ## Notes · 備註
 
 - File sizes are read from `PHAssetResource` through the undocumented `fileSize` key, the same approach most cleaner apps use. If it ever disappears, the app shows no size instead of crashing.
 - No duplicate or similar-photo detection yet.
-- Status: first version, installed by sideloading; not on the App Store.
+- Status: first version, installed by sideloading; App Store release in preparation.
 
 ## License
 

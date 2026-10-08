@@ -6,6 +6,7 @@ struct TrashView: View {
     @Environment(ReviewStore.self) private var store
     @Environment(PhotoLibrary.self) private var library
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     @State private var totalBytes: Int64?
     /// 已經算好的檔案大小，按刪除時不用再算一次
@@ -15,7 +16,9 @@ struct TrashView: View {
     @State private var errorMessage = ""
     @State private var confirmRestoreAll = false
 
-    private let columns = [GridItem(.adaptive(minimum: 100), spacing: 3)]
+    /// iPad（寬螢幕）上縮圖大一點，不會變成一大片小格子
+    private var cellSize: CGFloat { sizeClass == .regular ? 150 : 100 }
+    private var columns: [GridItem] { [GridItem(.adaptive(minimum: cellSize), spacing: 3)] }
 
     private var assets: [PHAsset] {
         store.trash.compactMap { library.assetsByID[$0] }
@@ -36,7 +39,7 @@ struct TrashView: View {
                         ForEach(items, id: \.localIdentifier) { asset in
                             TrashCell(
                                 asset: asset,
-                                pixelSize: CGSize(width: 160 * displayScale, height: 160 * displayScale)
+                                pixelSize: CGSize(width: cellSize * 1.6 * displayScale, height: cellSize * 1.6 * displayScale)
                             ) {
                                 store.restore(asset.localIdentifier)
                                 Haptics.impact(.light)
@@ -112,6 +115,9 @@ struct TrashView: View {
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
+        // 底色橫跨整個寬度，按鈕與文字在 iPad 上置中、不拉滿
+        .frame(maxWidth: Layout.narrowWidth)
+        .frame(maxWidth: .infinity)
         .padding(16)
         .background(.bar)
     }

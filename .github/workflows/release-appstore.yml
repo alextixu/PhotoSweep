@@ -1,0 +1,107 @@
+# 上架用：在 GitHub 的 macOS 機器上封存、以 App Store Connect API 金鑰自動簽名，並直接上傳到 App Store Connect。
+# 上傳後的版本會先出現在 TestFlight，測試沒問題再到 App Store Connect 送審。
+#
+# 第一次使用前，到 repo 的 Settings → Secrets and variables → Actions 建立以下 4 個 secret：
+#   APPLE_TEAM_ID        Apple Developer 帳號的 Team ID（developer.apple.com → Membership details）
+#   ASC_KEY_ID           App Store Connect API 金鑰的 Key ID
+#   ASC_ISSUER_ID        App Store Connect API 的 Issuer ID
+#   ASC_KEY_P8_BASE64    下載的 AuthKey_XXXX.p8 檔案內容，以 base64 編碼
+# API 金鑰在 App Store Connect → 使用者與存取權限 → 整合 → App Store Connect API 建立，角色選「管理」(Admin)，
+# 雲端簽名才能自動建立發佈憑證與描述檔。
+name: Release to App Store Connect
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本號（App Store 上顯示的版本，例如 1.0）"
+        required: true
+        default: "1.0"
+
+jobs:
+  release:
+    runs-on: macos-26   # Apple 要求以 Xcode 26 / iOS 26 SDK 建置
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show Xcode and SDK versions
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
+
+      - name: Check secrets
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          missing=0
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8_BASE64; do
+            if [ -z "${!name}" ]; then echo "::error::缺少 secret：$name"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Write API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
+
+      - name: Archive
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # 建置編號用這個工作流程的執行次數，每次上傳都會自動遞增
+          xcodebuild archive \
+            -project PhotoSweep.xcodeproj \
+            -scheme PhotoSweep \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/PhotoSweep.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+
+      - name: Export and upload to App Store Connect
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/PhotoSweep.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "已上傳版本 ${{ inputs.version }}（建置 $GITHUB_RUN_NUMBER）。處理完成後會出現在 App Store Connect 的 TestFlight。"
+
+      - name: Remove API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
