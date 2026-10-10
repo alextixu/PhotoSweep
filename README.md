@@ -19,7 +19,7 @@
 ## Features · 功能
 
 - **Swipe to decide** — right to keep, left to trash, or use the buttons under the card. Undo works even on the last photo.
-- **Double-tap to favorite** — synced with the Favorites album in Apple Photos.
+- **Double-tap to favorite** — a big heart pops up on the photo, synced with the Favorites album in Apple Photos.
 - **Tap to inspect** — full-screen view with pinch-zoom and pull-down-to-close; videos play inline.
 - **Newest first** — every deck starts with your most recent photos.
 - **Browse by month** — every month is a deck with its own progress bar, remembered between launches.
@@ -45,7 +45,7 @@
 3. **Swipe.**
    - Swipe **right**, or tap ✓, to **keep** a photo. Nothing changes in your library.
    - Swipe **left**, or tap 🗑, to put it in the app's **trash**. It is not deleted yet.
-   - **Double-tap** the card to add it to Favorites. Tap ♥ to do the same.
+   - **Double-tap** the card to add it to Favorites; a big heart pops up. Double-tapping never removes a favorite; tap ♥ to add or remove it.
    - **Tap** the card to see it full screen. Pinch to zoom, double-tap to zoom in, pull down to close.
    - Tap ↶ to **undo** your last decision.
 4. **Empty the trash.** Tap the red bar on the home screen, or the trash icon. Tap ↶ on a photo to restore it, or *Restore All*. Tap *Delete N Items* and confirm in the iOS dialog. The space-freed counter goes up.
@@ -63,7 +63,7 @@ Finished a month? The completion screen offers *Review Trash*, *Review Again* (s
 3. **開始滑**：
    - **往右滑**或按 ✓：**保留**，照片原封不動。
    - **往左滑**或按 🗑：放進 App 的**垃圾桶**，這時還沒有真的刪除。
-   - **雙擊卡片**或按 ♥：加入「最愛」，與「照片」App 同步。
+   - **雙擊卡片**：照片中央跳出大愛心，加入「最愛」，與「照片」App 同步。雙擊只會加入、不會取消；要取消請按 ♥。
    - **點一下卡片**：全螢幕檢視，可捏合縮放、雙擊放大、往下拉關閉。
    - 按 ↶：**復原**上一個決定。
 4. **清空垃圾桶**：按主畫面下方的紅色橫條或右上角垃圾桶。不想刪的照片按 ↶ 還原，也可以「全部還原」。按「刪除 N 個項目」，iOS 會再跳出確認視窗，同意後才會刪除，「已釋放」空間會跟著增加。

@@ -23,6 +23,8 @@ struct SwipeView: View {
     @State private var sessionTrashed = 0
     /// 剛切換過最愛的照片：PHAsset 物件是舊的，先用這個蓋過去
     @State private var favoriteOverrides: [String: Bool] = [:]
+    /// 雙擊時要在哪張卡片上跳出大愛心
+    @State private var heartBurst: HeartBurstItem?
     @State private var isVisible = false
     /// 目前請 PhotoKit 預先解碼的卡片
     @State private var cachedWindow: [PHAsset] = []
@@ -231,12 +233,19 @@ struct SwipeView: View {
                                 .rotationEffect(.degrees(15))
                                 .padding(24)
                         }
+                        .overlay {
+                            // 雙擊時照片中央跳出的大愛心，跟著卡片一起移動
+                            if let burst = heartBurst, burst.assetID == item.id {
+                                HeartBurst()
+                                    .id(burst.token)
+                            }
+                        }
                         .scaleEffect(cardLayout.scale)
                         .offset(cardLayout.offset)
                         .rotationEffect(.degrees(Double(cardLayout.offset.width / 18)), anchor: .bottom)
                         .gesture(
                             TapGesture(count: 2)
-                                .onEnded { toggleFavorite(item.asset) }
+                                .onEnded { likeByDoubleTap(item.asset) }
                                 .exclusively(before: TapGesture().onEnded { openDetail(item.asset) })
                         )
                         .gesture(dragGesture(for: item.asset))
@@ -428,15 +437,39 @@ struct SwipeView: View {
         favoriteOverrides[asset.localIdentifier] ?? asset.isFavorite
     }
 
+    /// ♥ 按鈕：加入或取消最愛
     private func toggleFavorite(_ asset: PHAsset) {
-        let newValue = !isFavorite(asset)
-        favoriteOverrides[asset.localIdentifier] = newValue
+        setFavorite(asset, !isFavorite(asset))
         Haptics.notify(.success)
+    }
+
+    /// 雙擊卡片：照片中央跳出大愛心並加入最愛。
+    /// 跟 Instagram 一樣只加入、不取消，連點兩次不會不小心取消；要取消請按 ♥ 按鈕。
+    private func likeByDoubleTap(_ asset: PHAsset) {
+        let burst = HeartBurstItem(assetID: asset.localIdentifier)
+        heartBurst = burst
+        if isFavorite(asset) {
+            Haptics.impact(.light)
+        } else {
+            setFavorite(asset, true)
+            Haptics.notify(.success)
+        }
+        // 動畫結束後拿掉（期間又雙擊的話，以新的那次為準）
+        Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            if heartBurst?.token == burst.token { heartBurst = nil }
+        }
+    }
+
+    private func setFavorite(_ asset: PHAsset, _ newValue: Bool) {
+        let id = asset.localIdentifier
+        let oldValue = isFavorite(asset)
+        favoriteOverrides[id] = newValue
         Task {
             do {
                 try await library.setFavorite(asset, newValue)
             } catch {
-                favoriteOverrides[asset.localIdentifier] = !newValue
+                favoriteOverrides[id] = oldValue
                 errorMessage = error.localizedDescription
                 showError = true
             }
@@ -455,6 +488,39 @@ struct SwipeView: View {
 }
 
 // MARK: - 子元件
+
+private struct HeartBurstItem {
+    let token = UUID()
+    let assetID: String
+}
+
+/// 雙擊照片時中央跳出的大愛心：彈出放大，停一下後淡出
+private struct HeartBurst: View {
+    @State private var scale: CGFloat = 0.2
+    @State private var opacity: Double = 0
+
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.system(size: 110))
+            .foregroundStyle(.pink)
+            .shadow(color: .black.opacity(0.35), radius: 14, y: 4)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.5)) {
+                    scale = 1
+                    opacity = 1
+                }
+                try? await Task.sleep(for: .milliseconds(550))
+                withAnimation(.easeOut(duration: 0.25)) {
+                    scale = 1.25
+                    opacity = 0
+                }
+            }
+    }
+}
 
 private struct CircleButton: View {
     let systemImage: String
